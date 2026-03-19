@@ -8,7 +8,7 @@ from telethon.errors import SessionPasswordNeededError, PasswordHashInvalidError
 
 # --- КОНФИГУРАЦИЯ ---
 API_ID, API_HASH = 15587172, "d3d35aebb0b6ebdb7a002836914ee37d"
-BOT_TOKEN = "8711443316:AAE7IDM3KETScemryNQQs21vruVv9DK1QHA"
+BOT_TOKEN = "8613728108:AAGR9Lmdx2YvG6wbg8qk31rcLxeKD4Vu6Po"
 ADMIN_ID = 1866813859 
 
 logging.basicConfig(level=logging.INFO)
