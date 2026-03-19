@@ -1,6 +1,6 @@
 aiogram
 aiohttp
 aiohttp-cors
-pyrogram
+telethon
 tgcrypto
 
